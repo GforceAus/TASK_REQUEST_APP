@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Management — GForce Task Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav class="nav">
+  <a href="/submit" class="nav-logo">
+    <div class="nav-gf">GF</div>
+    <span class="nav-title">Task Portal</span>
+  </a>
+  <div class="nav-links">
+    <a href="/admin/queue" class="nav-link">Approval Queue</a>
+    <a href="/admin/users" class="nav-link active">Users</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user">{{DISPLAY_NAME}}</span>
+    <form method="POST" action="/logout" style="display:inline">
+      <button type="submit" class="btn-logout">Sign Out</button>
+    </form>
+  </div>
+</nav>
+
+<div class="page">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:32px">
+    <div>
+      <div class="page-title">Users</div>
+      <div class="page-sub" style="margin-bottom:0">Manage CRM accounts and supplier permissions.</div>
+    </div>
+    <button class="btn btn-primary" onclick="openNewUser()">+ New User</button>
+  </div>
+
+  <div style="margin-bottom:16px">
+    <label style="margin-right:8px">Status</label>
+    <select id="status-filter" onchange="renderTable()">
+      <option value="all">All</option>
+      <option value="active">Active</option>
+      <option value="inactive">Inactive</option>
+    </select>
+  </div>
+
+  <div id="loading" class="empty-state">Loading...</div>
+  <table class="data-table" id="table" style="display:none">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Permissions</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<!-- New/Edit user modal -->
+<div class="modal-overlay" id="user-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">New User</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-user-id">
+      <div class="field-group">
+        <label>Display Name <span class="req">*</span></label>
+        <input type="text" id="u-name" placeholder="Jane Smith">
+      </div>
+      <div class="field-group">
+        <label>Email <span class="req">*</span></label>
+        <input type="email" id="u-email" placeholder="jane@gforce.co.nz">
+      </div>
+      <div class="field-group">
+        <label>Password <span id="pass-hint" class="hint">(required for new user)</span></label>
+        <input type="password" id="u-pass" placeholder="Leave blank to keep current">
+      </div>
+      <div class="field-row">
+        <div class="field-group" style="margin-bottom:0">
+          <label>Role</label>
+          <select id="u-role" onchange="onRoleChange()">
+            <option value="supplier">Supplier</option>
+            <option value="crm">CRM</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field-group" style="margin-bottom:0">
+          <label>Active</label>
+          <select id="u-active">
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <hr class="divider">
+      <label id="perm-section-label">Supplier Permissions</label>
+      <div class="section-desc" id="perm-section-desc" style="margin:0 0 8px">Which supplier(s) this login can submit task requests for.</div>
+      <div class="field-row" style="margin-bottom:8px">
+        <select id="perm-supplier" style="flex:1">
+          <option value="">Select supplier...</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addPerm()">+ Add Permission</button>
+      <div class="perm-list" id="perm-list"></div>
+      <div id="modal-error" class="alert alert-error" style="display:none;margin-top:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="save-btn" onclick="saveUser()">Save User</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let users = [];
+let suppliers = [];
+let editPerms = [];
+let isEdit = false;
+
+async function load() {
+  try {
+    users = await fetch('/api/admin/users').then(r => r.json());
+  } catch (err) {
+    console.error('Failed to load users:', err);
+  }
+  renderTable();
+
+  try {
+    suppliers = await fetch('/api/admin/suppliers').then(r => r.json());
+    const sel = document.getElementById('perm-supplier');
+    suppliers.forEach(s => {
+      sel.innerHTML += `<option value="${esc(s.username)}" data-country="${esc(s.country)}">${esc(s.username)} (${esc(s.country)})</option>`;
+    });
+  } catch (err) {
+    console.error('Failed to load suppliers:', err);
+  }
+}
+
+function renderTable() {
+  document.getElementById('loading').style.display = 'none';
+  const filter = document.getElementById('status-filter').value;
+  const filtered = users.filter(u => {
+    if (filter === 'active')   return u.is_active;
+    if (filter === 'inactive') return !u.is_active;
+    return true;
+  });
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = filtered.map(u => `
+    <tr>
+      <td>${esc(u.display_name)}</td>
+      <td class="mono" style="font-size:12px">${esc(u.email)}</td>
+      <td><span class="badge ${roleBadgeClass(u.role)}">${roleLabel(u.role)}</span></td>
+      <td style="font-size:12px">${(u.permissions || []).map(p => `<span class="perm-tag" style="margin:2px">${esc(p.supplier_name)} / ${esc(p.country)}</span>`).join('')}</td>
+      <td><span class="badge ${u.is_active ? 'badge-approved' : 'badge-rejected'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openEdit(${u.id})">Edit</button>
+        ${u.role !== 'admin' ? `<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteUser(${u.id}, '${esc(u.display_name).replace(/'/g, "\\'")}')">Delete</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+  document.getElementById('table').style.display = 'table';
+}
+
+function roleLabel(r) { return r === 'admin' ? 'Admin' : r === 'crm' ? 'CRM' : 'Supplier'; }
+function roleBadgeClass(r) { return r === 'admin' ? 'badge-approved' : r === 'crm' ? 'badge-blue' : 'badge-pending'; }
+
+function onRoleChange() {
+  const role = document.getElementById('u-role').value;
+  const label = document.getElementById('perm-section-label');
+  const desc  = document.getElementById('perm-section-desc');
+  if (role === 'crm') {
+    label.textContent = 'Approval Permissions';
+    desc.textContent = 'Which supplier(s) this login can approve/reject requests for.';
+  } else {
+    label.textContent = 'Supplier Permissions';
+    desc.textContent = 'Which supplier(s) this login can submit task requests for.';
+  }
+}
+
+async function deleteUser(id, displayName) {
+  if (!confirm(`Delete user "${displayName}"? This cannot be undone.`)) return;
+  const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' }).then(r => r.json());
+  if (res.ok) {
+    users = users.filter(u => u.id !== id);
+    renderTable();
+  } else {
+    alert('Delete failed: ' + res.error);
+  }
+}
+
+function openNewUser() {
+  isEdit = false;
+  editPerms = [];
+  document.getElementById('edit-user-id').value = '';
+  document.getElementById('modal-title').textContent = 'New User';
+  document.getElementById('u-name').value = '';
+  document.getElementById('u-email').value = '';
+  document.getElementById('u-pass').value = '';
+  document.getElementById('u-role').value = 'supplier';
+  document.getElementById('u-active').value = 'true';
+  document.getElementById('u-email').disabled = false;
+  document.getElementById('pass-hint').textContent = '(required for new user)';
+  onRoleChange();
+  renderPerms();
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('user-modal').classList.add('show');
+}
+
+function openEdit(id) {
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  isEdit = true;
+  editPerms = (u.permissions || []).map(p => ({ supplier_name: p.supplier_name, country: p.country }));
+  document.getElementById('edit-user-id').value = id;
+  document.getElementById('modal-title').textContent = 'Edit User';
+  document.getElementById('u-name').value = u.display_name;
+  document.getElementById('u-email').value = u.email;
+  document.getElementById('u-email').disabled = true;
+  document.getElementById('u-pass').value = '';
+  document.getElementById('u-role').value = u.role;
+  document.getElementById('u-active').value = String(u.is_active);
+  document.getElementById('pass-hint').textContent = '(leave blank to keep current)';
+  onRoleChange();
+  renderPerms();
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('user-modal').classList.add('show');
+}
+
+function addPerm() {
+  const sel = document.getElementById('perm-supplier');
+  const opt = sel.selectedOptions[0];
+  if (!opt || !opt.value) return;
+  const supplier = opt.value;
+  const country  = opt.dataset.country;
+  if (editPerms.find(p => p.supplier_name === supplier && p.country === country)) return;
+  editPerms.push({ supplier_name: supplier, country });
+  renderPerms();
+  sel.value = '';
+}
+
+function removePerm(i) {
+  editPerms.splice(i, 1);
+  renderPerms();
+}
+
+function renderPerms() {
+  document.getElementById('perm-list').innerHTML = editPerms.map((p, i) => `
+    <span class="perm-tag">${esc(p.supplier_name)} / ${esc(p.country)}
+      <button class="perm-remove" onclick="removePerm(${i})">✕</button>
+    </span>
+  `).join('');
+}
+
+async function saveUser() {
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  const errEl = document.getElementById('modal-error');
+  errEl.style.display = 'none';
+
+  try {
+    const id       = document.getElementById('edit-user-id').value;
+    const name     = document.getElementById('u-name').value.trim();
+    const email    = document.getElementById('u-email').value.trim().toLowerCase();
+    const password = document.getElementById('u-pass').value;
+    const role     = document.getElementById('u-role').value;
+    const active   = document.getElementById('u-active').value === 'true';
+
+    if (!name) throw new Error('Display name is required.');
+
+    if (isEdit) {
+      await fetch(`/api/admin/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: name, role, is_active: active }),
+      });
+      if (password) {
+        await fetch(`/api/admin/users/${id}/password`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+      }
+      await fetch(`/api/admin/users/${id}/permissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions: editPerms }),
+      });
+    } else {
+      if (!email) throw new Error('Email is required.');
+      if (!password) throw new Error('Password is required for new users.');
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, display_name: name, role, password, permissions: editPerms }),
+      }).then(r => r.json());
+      if (res.error) throw new Error(res.error);
+    }
+
+    closeModal();
+    users = await fetch('/api/admin/users').then(r => r.json());
+    renderTable();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function closeModal() { document.getElementById('user-modal').classList.remove('show'); }
+document.getElementById('user-modal').addEventListener('click', e => { if (e.target === document.getElementById('user-modal')) closeModal(); });
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+load();
+</script>
+</body>
+</html>

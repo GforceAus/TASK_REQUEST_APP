@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approval Queue — GForce Task Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav class="nav">
+  <a href="/submit" class="nav-logo">
+    <div class="nav-gf">GF</div>
+    <span class="nav-title">Task Portal</span>
+  </a>
+  <div class="nav-links">
+    <span id="supplier-links" style="display:none">
+      <a href="/submit" class="nav-link">New Request</a>
+      <a href="/my-requests" class="nav-link">My Requests</a>
+    </span>
+    <a href="/admin/queue" class="nav-link active">Approval Queue</a>
+    <span id="admin-only-links" style="display:none">
+      <a href="/admin/users" class="nav-link">Users</a>
+    </span>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user">{{DISPLAY_NAME}}</span>
+    <form method="POST" action="/logout" style="display:inline">
+      <button type="submit" class="btn-logout">Sign Out</button>
+    </form>
+  </div>
+</nav>
+
+<div class="queue-layout">
+  <!-- Sidebar -->
+  <div class="queue-sidebar">
+    <div class="queue-sidebar-header">
+      Pending Requests&nbsp;<span id="count" class="text-dim"></span>
+    </div>
+    <div id="sidebar-list"><div class="queue-empty">Loading...</div></div>
+  </div>
+
+  <!-- Detail panel -->
+  <div class="queue-detail" id="detail">
+    <div class="queue-detail-placeholder">Select a request to review</div>
+  </div>
+</div>
+
+<script>
+const ROLE = '{{ROLE}}';
+if (ROLE === 'admin') {
+  document.getElementById('admin-only-links').style.display = 'contents';
+}
+
+let allRequests = [];
+let activeId = null;
+
+async function loadQueue() {
+  allRequests = await fetch('/api/admin/queue').then(r => r.json());
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const el = document.getElementById('sidebar-list');
+  document.getElementById('count').textContent = `(${allRequests.length})`;
+  if (!allRequests.length) { el.innerHTML = '<div class="queue-empty">No pending requests.</div>'; return; }
+  el.innerHTML = allRequests.map(r => `
+    <div class="queue-item${r.id === activeId ? ' active' : ''}" onclick="openDetail(${r.id})" id="si-${r.id}">
+      <div class="queue-item-name">${esc(r.task_name)}</div>
+      <div class="queue-item-meta">${esc(r.submitter_name)} · ${new Date(r.created_at).toLocaleDateString('en-AU')}</div>
+    </div>
+  `).join('');
+}
+
+async function openDetail(id) {
+  activeId = id;
+  renderSidebar();
+  const r = await fetch(`/api/admin/requests/${id}`).then(x => x.json());
+  const detail = document.getElementById('detail');
+  detail.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title">${esc(r.task_name)}</div>
+      <div class="detail-actions">
+        <button class="btn btn-danger btn-sm" onclick="showReject(${r.id})">Reject</button>
+        <button class="btn btn-primary btn-sm" id="approve-btn-${r.id}" onclick="approve(${r.id})">Approve</button>
+      </div>
+    </div>
+
+    <div class="detail-meta">
+      <div class="detail-meta-item"><div class="detail-meta-label">Submitted by</div><div class="detail-meta-value">${esc(r.submitter_name)}<br><span class="mono text-dim" style="font-size:11px">${esc(r.submitter_email)}</span></div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Supplier</div><div class="detail-meta-value">${esc(r.supplier_name)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Retailer</div><div class="detail-meta-value">${esc(r.retailer_name)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Country</div><div class="detail-meta-value">${esc(r.country)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Priority</div><div class="detail-meta-value">${esc(r.task_priority)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Submitted</div><div class="detail-meta-value mono" style="font-size:12px">${new Date(r.created_at).toLocaleString('en-AU',{hour12:false})}</div></div>
+    </div>
+
+    ${r.attachments && r.attachments.length ? `
+      <div class="review-section-title">Attachments (${r.attachments.length})</div>
+      ${r.attachments.map(a => `<div class="mono text-dim" style="font-size:11px;margin-bottom:4px">📎 ${esc(a.original_name)} <span style="opacity:.5">${a.attachment_type}</span></div>`).join('')}
+    ` : ''}
+
+    ${renderPayload(r.payload)}
+
+    <!-- Reject panel (hidden by default) -->
+    <div class="reject-panel" id="reject-panel-${r.id}">
+      <div class="review-section-title" style="margin-top:0">Rejection Reason</div>
+      <textarea id="reject-reason-${r.id}" placeholder="Explain why this request is being rejected..."></textarea>
+      <div class="reject-actions">
+        <button class="btn btn-ghost btn-sm" onclick="hideReject(${r.id})">Cancel</button>
+        <button class="btn btn-danger btn-sm" onclick="submitReject(${r.id})">Confirm Reject</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderPayload(p) {
+  if (!p) return '';
+  const h = p.header || {};
+  const t = (p.tasks && p.tasks[0]) || {};
+  const m = p.portal_field_map || {};
+  const stateDisplay = Array.isArray(m.state) ? m.state.join(', ') : 'All States';
+
+  let html = `
+    <div class="review-section-title">Task Details</div>
+    <div class="detail-meta">
+      <div class="detail-meta-item"><div class="detail-meta-label">Priority</div><div class="detail-meta-value">${esc(t.task_priority)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Load From Date</div><div class="detail-meta-value">${esc(h.load_from_date_display)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">State(s)</div><div class="detail-meta-value">${esc(stateDisplay)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Approval Required</div><div class="detail-meta-value">${h.approval_required ? 'Yes' : 'No'}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Photo</div><div class="detail-meta-value">${esc(m.photo_name)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Comment</div><div class="detail-meta-value">${esc(m.comment)}</div></div>
+    </div>
+  `;
+
+  if (t.task_description) {
+    html += `<div class="review-section-title">Description</div><div class="detail-meta-value" style="white-space:pre-wrap">${esc(t.task_description)}</div>`;
+  }
+
+  if (t.dropdowns && t.dropdowns.length) {
+    html += `<div class="review-section-title">Questions</div>`;
+    t.dropdowns.forEach(d => {
+      html += `
+        <div style="margin-bottom:12px">
+          <div style="font-weight:500;margin-bottom:4px">${esc(d.question)}</div>
+          <div style="font-size:12px" class="text-dim">${(d.answers || []).map(a => esc(a.text)).join(', ') || '—'}</div>
+        </div>
+      `;
+    });
+  }
+
+  if (h.import_store && h.import_store.enabled) {
+    html += `<div class="review-section-title">Store Import</div><div class="mono text-dim" style="font-size:11px">📄 ${esc(h.import_store.filename)}</div>`;
+  }
+
+  html += `
+    <details style="margin-top:16px">
+      <summary style="cursor:pointer;font-size:12px" class="text-dim">View raw JSON</summary>
+      <pre class="review-json">${esc(JSON.stringify(p, null, 2))}</pre>
+    </details>
+  `;
+
+  return html;
+}
+
+function showReject(id) {
+  document.getElementById(`reject-panel-${id}`).classList.add('show');
+}
+function hideReject(id) {
+  document.getElementById(`reject-panel-${id}`).classList.remove('show');
+}
+
+async function approve(id) {
+  const btn = document.getElementById(`approve-btn-${id}`);
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  const res = await fetch(`/api/admin/requests/${id}/approve`, { method: 'POST' }).then(r => r.json());
+  if (res.ok) {
+    allRequests = allRequests.filter(r => r.id !== id);
+    activeId = null;
+    renderSidebar();
+    document.getElementById('detail').innerHTML = '<div class="queue-detail-placeholder" style="color:var(--green)">✓ Task approved and emailed to support@</div>';
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = 'Approve';
+    alert('Approval failed: ' + res.error);
+  }
+}
+
+async function submitReject(id) {
+  const reason = document.getElementById(`reject-reason-${id}`).value.trim();
+  if (!reason) { alert('Please enter a rejection reason.'); return; }
+  const res = await fetch(`/api/admin/requests/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  }).then(r => r.json());
+  if (res.ok) {
+    allRequests = allRequests.filter(r => r.id !== id);
+    activeId = null;
+    renderSidebar();
+    document.getElementById('detail').innerHTML = '<div class="queue-detail-placeholder" style="color:var(--red)">Request rejected. User has been notified.</div>';
+  } else {
+    alert('Rejection failed: ' + res.error);
+  }
+}
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+loadQueue();
+setInterval(loadQueue, 60000); // refresh every minute
+</script>
+</body>
+</html>

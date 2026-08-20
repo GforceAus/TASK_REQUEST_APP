@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New Request — GForce Task Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav class="nav">
+  <a href="/submit" class="nav-logo">
+    <div class="nav-gf">GF</div>
+    <span class="nav-title">Task Portal</span>
+  </a>
+  <div class="nav-links">
+    <span id="supplier-links">
+      <a href="/submit" class="nav-link active">New Request</a>
+      <a href="/my-requests" class="nav-link">My Requests</a>
+    </span>
+    <span id="admin-links" style="display:none">
+      <a href="/admin/queue" class="nav-link">Approval Queue</a>
+      <a href="/admin/users" class="nav-link">Users</a>
+    </span>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user">{{DISPLAY_NAME}}</span>
+    <form method="POST" action="/logout" style="display:inline">
+      <button type="submit" class="btn-logout">Sign Out</button>
+    </form>
+  </div>
+</nav>
+
+<div class="page">
+
+  <!-- Progress bar -->
+  <div class="progress-bar" style="margin-bottom:40px">
+    <div class="progress-step active" id="ps1" onclick="goSection(1)">
+      <div class="step-dot active" id="sd1">1</div>
+      <div class="step-label">Setup</div>
+    </div>
+    <div class="progress-step" id="ps2" onclick="goSection(2)">
+      <div class="step-dot" id="sd2">2</div>
+      <div class="step-label">Task Details</div>
+    </div>
+    <div class="progress-step" id="ps3" onclick="goSection(3)">
+      <div class="step-dot" id="sd3">3</div>
+      <div class="step-label">Questions</div>
+    </div>
+    <div class="progress-step" id="ps4" onclick="goSection(4)">
+      <div class="step-dot" id="sd4">4</div>
+      <div class="step-label">Review</div>
+    </div>
+  </div>
+
+  <div id="error-banner" class="alert alert-error" style="display:none"></div>
+
+  <!-- ── Section 1: Setup ──────────────────────────────────────────────────── -->
+  <div class="section active" id="s1">
+    <div class="section-title">Task Setup</div>
+    <div class="section-desc">Configure where and when this task applies.</div>
+
+    <!-- Supplier / Country (locked) -->
+    <div class="field-row">
+      <div class="field-group" style="margin-bottom:0">
+        <label>Supplier <span class="req">*</span></label>
+        <div id="supplier-display"></div>
+        <input type="hidden" id="supplier_name" name="supplier_name">
+      </div>
+      <div class="field-group" style="margin-bottom:0">
+        <label>Country <span class="req">*</span></label>
+        <div id="country-display"></div>
+        <input type="hidden" id="country" name="country">
+      </div>
+    </div>
+
+    <!-- Supplier switcher (shown when user has multiple permissions) -->
+    <div id="perm-switcher" style="display:none;margin:12px 0 20px">
+      <label>You have multiple supplier permissions — select which to submit for:</label>
+      <select id="perm-select" onchange="switchPerm(this.value)"></select>
+    </div>
+
+    <div class="field-row" style="margin-top:20px">
+      <div class="field-group" style="margin-bottom:0">
+        <label>Retailer <span class="req">*</span></label>
+        <select id="retailer"><option value="">Loading...</option></select>
+      </div>
+      <div class="field-group" style="margin-bottom:0">
+        <label>Week Start Date <span class="req">*</span></label>
+        <input type="date" id="week_start_date">
+      </div>
+    </div>
+
+    <div class="field-group" style="margin-top:20px">
+      <label>State / Territory</label>
+      <div class="multi-select" id="state-ms">
+        <div class="multi-select-trigger" onclick="toggleStateMenu()">
+          <span class="multi-select-display" id="state-display">All States</span>
+          <span class="multi-select-arrow">▼</span>
+        </div>
+        <div class="multi-select-dropdown" id="state-dropdown"></div>
+      </div>
+    </div>
+
+    <div class="toggle-row" style="margin-bottom:20px">
+      <div>
+        <div class="toggle-label">Import Store List</div>
+        <div class="toggle-sub">Upload a file to target specific stores</div>
+      </div>
+      <div class="toggle" id="store-toggle" onclick="toggleStore()"></div>
+    </div>
+    <div id="store-file-wrap" style="display:none;margin-bottom:20px">
+      <label>Store File <span class="req">*</span> <span class="hint">.xlsx or .csv</span></label>
+      <button type="button" class="file-zone-btn" onclick="document.getElementById('store-file-input').click()">
+        <span>📂</span>
+        <span id="store-file-name">Choose file...</span>
+      </button>
+      <input type="file" id="store-file-input" accept=".xlsx,.csv" style="display:none" onchange="onStoreFile(this)">
+    </div>
+
+    <div class="field-row">
+      <div class="field-group" style="margin-bottom:0">
+        <label>Approval Required</label>
+        <select id="approval_required">
+          <option value="false">Not Required</option>
+          <option value="true">Required</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row" style="margin-top:16px">
+      <div class="field-group" style="margin-bottom:0">
+        <label>Photo Requirement</label>
+        <select id="photo_required">
+          <option value="required">Required</option>
+          <option value="optional">Optional</option>
+          <option value="not_required">Not Required</option>
+        </select>
+      </div>
+      <div class="field-group" style="margin-bottom:0">
+        <label>Comment Requirement</label>
+        <select id="comment_required">
+          <option value="required">Required</option>
+          <option value="optional">Optional</option>
+          <option value="not_required">Not Required</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section-nav">
+      <span></span>
+      <button class="btn btn-primary" onclick="nextSection(1)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- ── Section 2: Task Details ───────────────────────────────────────────── -->
+  <div class="section" id="s2">
+    <div class="section-title">Task Details</div>
+    <div class="section-desc">Enter the task name, description and any file attachments.</div>
+
+    <div class="field-group">
+      <label>Task Name <span class="req">*</span> <span class="hint">date auto-filled from Week Start Date — type the rest in CAPS — 48 character limit</span></label>
+      <div class="task-name-input" id="task-name-input">
+        <span class="task-name-prefix" id="task-name-prefix">DD-MM-YY</span>
+        <input type="text" id="task_name_suffix" placeholder="e.g. WOODHOUSE STOCK CHECK" maxlength="39">
+      </div>
+      <input type="hidden" id="task_name">
+      <div class="field-error" id="task-name-error">Task name is required.</div>
+    </div>
+
+    <div class="field-group">
+      <label>Task Priority</label>
+      <select id="task_priority">
+        <option value="High" selected>High</option>
+        <option value="Critical">Critical</option>
+        <option value="Medium">Medium</option>
+        <option value="Low">Low</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label>Task Description <span class="req">*</span></label>
+      <textarea id="task_description" placeholder="Enter detailed task instructions..." oninput="updateCharCount()"></textarea>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:4px"><span id="char-count">0</span> characters</div>
+    </div>
+
+    <div class="field-group">
+      <label>Task Attachments <span class="hint">up to 5 files — PDF, XLSX, DOCX, PNG, JPG</span></label>
+      <div id="doc-list"></div>
+      <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addDoc()" id="add-doc-btn">+ Add Attachment</button>
+    </div>
+
+    <div class="section-nav">
+      <button class="btn btn-ghost" onclick="goSection(1)">← Back</button>
+      <button class="btn btn-primary" onclick="nextSection(2)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- ── Section 3: Dropdown Questions ────────────────────────────────────── -->
+  <div class="section" id="s3">
+    <div class="section-title">Dropdown Questions</div>
+    <div class="section-desc">Add optional multiple-choice questions for field staff. Leave empty to skip.</div>
+
+    <div id="dropdown-cards"></div>
+    <button type="button" class="btn btn-ghost" style="margin-top:4px" onclick="addDropdown()">+ Add Question</button>
+
+    <div class="section-nav">
+      <button class="btn btn-ghost" onclick="goSection(2)">← Back</button>
+      <button class="btn btn-primary" onclick="nextSection(3)">Review →</button>
+    </div>
+  </div>
+
+  <!-- ── Section 4: Review & Submit ───────────────────────────────────────── -->
+  <div class="section" id="s4">
+    <div class="section-title">Review & Submit</div>
+    <div class="section-desc">Check everything before sending for approval.</div>
+
+    <div class="review-section-title">Shareable Settings</div>
+    <div class="shareable-cards">
+      <div class="shareable-card on" id="sc-photos" onclick="toggleShareable('photos')">
+        <div class="shareable-card-title">Photos</div>
+        <div class="shareable-card-state" id="sc-photos-state">Shareable with client</div>
+      </div>
+      <div class="shareable-card on" id="sc-comments" onclick="toggleShareable('comments')">
+        <div class="shareable-card-title">Comments</div>
+        <div class="shareable-card-state" id="sc-comments-state">Shareable with client</div>
+      </div>
+      <div class="shareable-card on" id="sc-questions" onclick="toggleShareable('questions')">
+        <div class="shareable-card-title">Questions</div>
+        <div class="shareable-card-state" id="sc-questions-state">Shareable with client</div>
+      </div>
+    </div>
+
+    <div id="review-preview">Loading...</div>
+
+    <div class="section-nav">
+      <button class="btn btn-ghost" onclick="goSection(3)">← Back</button>
+      <button class="btn btn-primary" id="submit-btn" onclick="submitForm()">
+        Submit for Approval
+      </button>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+// ── Injected server data ──────────────────────────────────────────────────────
+const USER_PERMS = {{USER_PERMS_JSON}};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allStates     = [];
+let selectedStates = [];   // [] = all; array = explicit list
+let storeEnabled  = false;
+let storeFileObj  = null;
+let docSlots      = [];    // [{file: File|null}]
+let dropdowns     = [];    // [{question, answers:[{text,flag}]}]
+let shareablePhotos   = true;
+let shareableComments = true;
+let shareableQuestions = true;
+let currentSection = 1;
+let activePerm    = USER_PERMS[0] || null;
+
+if (USER_PERMS.length === 0) {
+  document.getElementById('error-banner').textContent = 'Your account has no supplier permissions. Contact your admin.';
+  document.getElementById('error-banner').style.display = 'block';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // Admin links
+  const me = await fetch('/api/me').then(r => r.json());
+  if (me.role === 'admin') {
+    document.getElementById('admin-links').style.display = 'contents';
+    document.getElementById('supplier-links').style.display = 'none';
+  }
+
+  // Supplier/country display + supplier-scoped retailer/state options
+  await setupPermDisplay();
+
+  // Close state menu on outside click
+  document.addEventListener('click', e => {
+    if (!document.getElementById('state-ms').contains(e.target)) closeStateMenu();
+  });
+
+  renderDocs();
+  renderDropdownCards();
+
+  document.getElementById('week_start_date').addEventListener('change', updateTaskNamePrefix);
+  document.getElementById('task_name_suffix').addEventListener('input', () => {
+    syncTaskName();
+    document.getElementById('task-name-error').classList.remove('show');
+    document.getElementById('task-name-input').classList.remove('error');
+  });
+});
+
+// ── Task name date prefix ────────────────────────────────────────────────────
+function getDatePrefix() {
+  const val = document.getElementById('week_start_date').value;
+  if (!val) return '';
+  const [yyyy, mm, dd] = val.split('-');
+  return `${dd}-${mm}-${yyyy.slice(2)}`;
+}
+
+const TASK_NAME_MAX = 48;
+
+function updateTaskNamePrefix() {
+  const prefix = getDatePrefix();
+  const prefixEl = document.getElementById('task-name-prefix');
+  prefixEl.textContent = prefix || 'DD-MM-YY';
+  prefixEl.classList.toggle('placeholder', !prefix);
+
+  const suffixEl  = document.getElementById('task_name_suffix');
+  const maxSuffix = Math.max(0, TASK_NAME_MAX - (prefix ? prefix.length + 1 : 0));
+  suffixEl.maxLength = maxSuffix;
+  if (suffixEl.value.length > maxSuffix) suffixEl.value = suffixEl.value.slice(0, maxSuffix);
+
+  syncTaskName();
+}
+
+function syncTaskName() {
+  const prefix = getDatePrefix();
+  const suffix = document.getElementById('task_name_suffix').value.trim();
+  document.getElementById('task_name').value = (prefix && suffix) ? `${prefix} ${suffix}` : '';
+}
+
+// ── Permissions ───────────────────────────────────────────────────────────────
+async function setupPermDisplay() {
+  if (USER_PERMS.length === 0) return;
+  if (USER_PERMS.length > 1) {
+    const sw = document.getElementById('perm-switcher');
+    sw.style.display = 'block';
+    const sel = document.getElementById('perm-select');
+    USER_PERMS.forEach((p, i) => {
+      sel.innerHTML += `<option value="${i}">${esc(p.supplier_name)} / ${esc(p.country)}</option>`;
+    });
+  }
+  await applyPerm(0);
+}
+
+async function switchPerm(i) { await applyPerm(parseInt(i)); }
+
+async function applyPerm(i) {
+  activePerm = USER_PERMS[i] || USER_PERMS[0];
+  document.getElementById('supplier_name').value = activePerm.supplier_name;
+  document.getElementById('country').value       = activePerm.country;
+  document.getElementById('supplier-display').innerHTML = `<span class="locked-value">${esc(activePerm.supplier_name)}</span>`;
+  document.getElementById('country-display').innerHTML  = `<span class="locked-value">${esc(activePerm.country)}</span>`;
+  await loadSupplierScope(activePerm.supplier_name);
+}
+
+// ── Supplier-scoped retailer/state options ─────────────────────────────────────
+async function loadSupplierScope(supplier) {
+  populateSelect('retailer', [], 'Loading...');
+  try {
+    const scope = await fetch(`/api/supplier-scope?supplier=${encodeURIComponent(supplier)}`).then(r => r.json());
+    if (scope.retailers && scope.retailers.length) {
+      populateSelect('retailer', scope.retailers, 'Select retailer...');
+      // Single valid retailer — auto-select it since there's no real choice to make.
+      if (scope.retailers.length === 1) document.getElementById('retailer').value = scope.retailers[0];
+    } else {
+      // No call-cycle data for this supplier — fall back to the broader (unfiltered) list.
+      const data = await fetch('/api/dropdowns').then(r => r.json());
+      populateSelect('retailer', data.retailers, 'Select retailer...');
+    }
+    if (scope.states && scope.states.length) {
+      allStates = scope.states;
+    } else {
+      const data = await fetch('/api/dropdowns').then(r => r.json());
+      allStates = data.states;
+    }
+    buildStateDropdown(allStates);
+  } catch (err) {
+    console.error('Failed to load supplier scope:', err);
+    populateSelect('retailer', ['Bunnings','Mitre 10','Total Tools','Other'], 'Select retailer...');
+    allStates = ['ACT','NSW','NT','QLD','SA','TAS','VIC','WA'];
+    buildStateDropdown(allStates);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function populateSelect(id, opts, placeholder) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<option value="">${placeholder}</option>`;
+  opts.forEach(o => { const opt = document.createElement('option'); opt.value = o; opt.textContent = o; el.appendChild(opt); });
+}
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Section navigation ────────────────────────────────────────────────────────
+function goSection(n) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('s' + n).classList.add('active');
+  for (let i = 1; i <= 4; i++) {
+    const dot = document.getElementById('sd' + i);
+    const step = document.getElementById('ps' + i);
+    dot.classList.remove('active','done');
+    step.classList.remove('active','done');
+    if (i < n) { dot.classList.add('done'); step.classList.add('done'); }
+    else if (i === n) { dot.classList.add('active'); step.classList.add('active'); }
+  }
+  currentSection = n;
+  if (n === 2) updateTaskNamePrefix();
+  if (n === 4) buildReview();
+}
+
+function nextSection(n) {
+  if (!validateSection(n)) return;
+  goSection(n + 1);
+}
+
+function validateSection(n) {
+  clearErrors();
+  if (n === 1) {
+    if (!document.getElementById('supplier_name').value) return showError('error-banner', 'Supplier is required.');
+    if (!document.getElementById('retailer').value) return showError('error-banner', 'Retailer is required.');
+    if (!document.getElementById('week_start_date').value) return showError('error-banner', 'Week start date is required.');
+    if (storeEnabled && !storeFileObj) return showError('error-banner', 'Please select a store file.');
+  }
+  if (n === 2) {
+    syncTaskName();
+    const suffix = document.getElementById('task_name_suffix').value.trim();
+    const name   = document.getElementById('task_name').value.trim();
+    if (!suffix || !/^\d{2}-\d{2}-\d{2}\s+\S/.test(name)) {
+      document.getElementById('task-name-error').classList.add('show');
+      document.getElementById('task-name-input').classList.add('error');
+      return false;
+    }
+    if (!document.getElementById('task_description').value.trim()) return showError('error-banner', 'Task description is required.');
+  }
+  return true;
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+  return false;
+}
+
+function clearErrors() {
+  document.getElementById('error-banner').style.display = 'none';
+  document.getElementById('task-name-error').classList.remove('show');
+  document.getElementById('task-name-input').classList.remove('error');
+}
+
+// ── State multi-select ────────────────────────────────────────────────────────
+function buildStateDropdown(states) {
+  const dd = document.getElementById('state-dropdown');
+  dd.innerHTML = '';
+  const allItem = document.createElement('div');
+  allItem.className = 'multi-select-item';
+  allItem.innerHTML = '<input type="checkbox" id="state-cb-all" checked><span>All States</span>';
+  allItem.querySelector('input').addEventListener('change', onAllStatesToggle);
+  dd.appendChild(allItem);
+  dd.appendChild(Object.assign(document.createElement('hr'), { className: 'multi-select-divider' }));
+  states.forEach(st => {
+    const item = document.createElement('div');
+    item.className = 'multi-select-item';
+    item.innerHTML = `<input type="checkbox" class="state-cb" value="${esc(st)}" checked><span>${esc(st)}</span>`;
+    item.querySelector('input').addEventListener('change', onStateCbChange);
+    dd.appendChild(item);
+  });
+  selectedStates = [];
+  updateStateDisplay();
+}
+
+function toggleStateMenu() { document.getElementById('state-ms').classList.toggle('open'); }
+function closeStateMenu()  { document.getElementById('state-ms').classList.remove('open'); }
+
+function onAllStatesToggle(e) {
+  document.querySelectorAll('.state-cb').forEach(cb => { cb.checked = e.target.checked; });
+  selectedStates = e.target.checked ? [] : document.querySelectorAll('.state-cb:checked').length === 0 ? [] : Array.from(document.querySelectorAll('.state-cb:checked')).map(c => c.value);
+  if (!e.target.checked) selectedStates = [];
+  updateStateDisplay();
+}
+
+function onStateCbChange() {
+  const all = document.querySelectorAll('.state-cb');
+  const checked = document.querySelectorAll('.state-cb:checked');
+  document.getElementById('state-cb-all').checked = all.length === checked.length;
+  selectedStates = all.length === checked.length ? [] : Array.from(checked).map(c => c.value);
+  updateStateDisplay();
+}
+
+function updateStateDisplay() {
+  const el = document.getElementById('state-display');
+  if (selectedStates.length === 0) {
+    el.textContent = 'All States';
+    el.classList.remove('placeholder');
+  } else {
+    el.textContent = selectedStates.join(', ');
+    el.classList.remove('placeholder');
+  }
+}
+
+function getStateValue() { return selectedStates.length === 0 ? 'all' : selectedStates; }
+
+// ── Store toggle ──────────────────────────────────────────────────────────────
+function toggleStore() {
+  storeEnabled = !storeEnabled;
+  document.getElementById('store-toggle').classList.toggle('on', storeEnabled);
+  document.getElementById('store-file-wrap').style.display = storeEnabled ? 'block' : 'none';
+  if (!storeEnabled) { storeFileObj = null; document.getElementById('store-file-name').textContent = 'Choose file...'; }
+}
+
+function onStoreFile(input) {
+  storeFileObj = input.files[0] || null;
+  document.getElementById('store-file-name').textContent = storeFileObj ? storeFileObj.name : 'Choose file...';
+}
+
+// ── Doc attachments ───────────────────────────────────────────────────────────
+function renderDocs() {
+  const el = document.getElementById('doc-list');
+  el.innerHTML = docSlots.map((slot, i) => `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <button type="button" class="file-zone-btn" onclick="document.getElementById('doc-input-${i}').click()" style="flex:1">
+        <span>📎</span>
+        <span>${slot.file ? esc(slot.file.name) : 'Choose file...'}</span>
+      </button>
+      <input type="file" id="doc-input-${i}" accept=".pdf,.xlsx,.xls,.csv,.docx,.doc,.png,.jpg,.jpeg" style="display:none" onchange="onDocFile(${i}, this)">
+      <button type="button" class="remove-answer-btn" onclick="removeDoc(${i})">✕</button>
+    </div>
+  `).join('');
+  document.getElementById('add-doc-btn').style.display = docSlots.length >= 5 ? 'none' : '';
+}
+
+function addDoc()         { docSlots.push({ file: null }); renderDocs(); }
+function removeDoc(i)     { docSlots.splice(i, 1); renderDocs(); }
+function onDocFile(i, el) { docSlots[i].file = el.files[0] || null; renderDocs(); }
+
+// ── Dropdown questions ────────────────────────────────────────────────────────
+function addDropdown() {
+  dropdowns.push({ question: '', answers: [{ text: '', flag: '' }] });
+  renderDropdownCards();
+}
+
+function removeDropdown(i) { dropdowns.splice(i, 1); renderDropdownCards(); }
+
+function addAnswer(i) {
+  dropdowns[i].answers.push({ text: '', flag: '' });
+  renderDropdownCards();
+}
+
+function removeAnswer(i, j) {
+  if (dropdowns[i].answers.length <= 1) return;
+  dropdowns[i].answers.splice(j, 1);
+  renderDropdownCards();
+}
+
+function cycleFlag(i, j) {
+  const flags = ['', 'must comment', 'must attach screenshots'];
+  const cur = dropdowns[i].answers[j].flag;
+  dropdowns[i].answers[j].flag = flags[(flags.indexOf(cur) + 1) % flags.length];
+  renderDropdownCards();
+}
+
+function syncQuestion(i, val) { dropdowns[i].question = val; }
+function syncAnswer(i, j, val) { dropdowns[i].answers[j].text = val; }
+
+function flagLabel(f) {
+  if (f === 'must comment') return 'Must Comment';
+  if (f === 'must attach screenshots') return 'Must Screenshot';
+  return 'No Flag';
+}
+function flagClass(f) {
+  if (f === 'must comment') return 'flag-comment';
+  if (f === 'must attach screenshots') return 'flag-screenshot';
+  return '';
+}
+
+function renderDropdownCards() {
+  const el = document.getElementById('dropdown-cards');
+  el.innerHTML = dropdowns.map((d, i) => `
+    <div class="dropdown-card">
+      <div class="dropdown-card-header">
+        <span class="dropdown-num">QUESTION ${i + 1}</span>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="removeDropdown(${i})">Remove</button>
+      </div>
+      <div class="field-group">
+        <label>Question Text</label>
+        <input type="text" value="${esc(d.question)}" placeholder="e.g. Were any adjustments required?" oninput="syncQuestion(${i}, this.value)">
+      </div>
+      <label>Answer Options</label>
+      ${d.answers.map((a, j) => `
+        <div class="answer-row">
+          <input type="text" value="${esc(a.text)}" placeholder="Answer option ${j + 1}" oninput="syncAnswer(${i}, ${j}, this.value)" maxlength="50">
+          <button type="button" class="flag-btn ${flagClass(a.flag)}" onclick="cycleFlag(${i}, ${j})">${flagLabel(a.flag)}</button>
+          <button type="button" class="remove-answer-btn" onclick="removeAnswer(${i}, ${j})">✕</button>
+        </div>
+      `).join('')}
+      <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addAnswer(${i})">+ Add Answer</button>
+    </div>
+  `).join('');
+}
+
+// ── Char count ────────────────────────────────────────────────────────────────
+function updateCharCount() {
+  document.getElementById('char-count').textContent = document.getElementById('task_description').value.length;
+}
+
+// ── Shareable toggles ─────────────────────────────────────────────────────────
+function toggleShareable(type) {
+  if (type === 'photos')   { shareablePhotos   = !shareablePhotos;   updateShareableUI('photos',   shareablePhotos); }
+  if (type === 'comments') { shareableComments = !shareableComments; updateShareableUI('comments', shareableComments); }
+  if (type === 'questions'){ shareableQuestions = !shareableQuestions; updateShareableUI('questions', shareableQuestions); }
+}
+function updateShareableUI(type, val) {
+  const card  = document.getElementById('sc-' + type);
+  const state = document.getElementById('sc-' + type + '-state');
+  card.classList.toggle('on', val);
+  state.textContent = val ? 'Shareable with client' : 'Not shared';
+}
+
+// ── Build review ──────────────────────────────────────────────────────────────
+function buildReview() {
+  const payload = buildPayload();
+  document.getElementById('review-preview').innerHTML = renderPayload(payload);
+}
+
+function renderPayload(p) {
+  if (!p) return '';
+  const h = p.header || {};
+  const t = (p.tasks && p.tasks[0]) || {};
+  const m = p.portal_field_map || {};
+  const stateDisplay = Array.isArray(m.state) ? m.state.join(', ') : 'All States';
+
+  let html = `
+    <div class="review-section-title">Task Details</div>
+    <div class="detail-meta">
+      <div class="detail-meta-item"><div class="detail-meta-label">Priority</div><div class="detail-meta-value">${esc(t.task_priority)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Load From Date</div><div class="detail-meta-value">${esc(h.load_from_date_display)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Country</div><div class="detail-meta-value">${esc(m.country)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">State(s)</div><div class="detail-meta-value">${esc(stateDisplay)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Approval Required</div><div class="detail-meta-value">${h.approval_required ? 'Yes' : 'No'}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Photo</div><div class="detail-meta-value">${esc(m.photo_name)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Comment</div><div class="detail-meta-value">${esc(m.comment)}</div></div>
+    </div>
+  `;
+
+  if (t.task_description) {
+    html += `<div class="review-section-title">Description</div><div class="detail-meta-value" style="white-space:pre-wrap">${esc(t.task_description)}</div>`;
+  }
+
+  if (t.dropdowns && t.dropdowns.length) {
+    html += `<div class="review-section-title">Questions</div>`;
+    t.dropdowns.forEach(d => {
+      html += `
+        <div style="margin-bottom:12px">
+          <div style="font-weight:500;margin-bottom:4px">${esc(d.question)}</div>
+          <div style="font-size:12px" class="text-dim">${(d.answers || []).map(a => esc(a.text)).join(', ') || '—'}</div>
+        </div>
+      `;
+    });
+  }
+
+  if (h.import_store && h.import_store.enabled) {
+    html += `<div class="review-section-title">Store Import</div><div class="mono text-dim" style="font-size:11px">📄 ${esc(h.import_store.filename)}</div>`;
+  }
+
+  html += `
+    <details style="margin-top:16px">
+      <summary style="cursor:pointer;font-size:12px" class="text-dim">View raw JSON</summary>
+      <pre class="review-json">${esc(JSON.stringify(p, null, 2))}</pre>
+    </details>
+  `;
+
+  return html;
+}
+
+function buildPayload() {
+  const supplier    = document.getElementById('supplier_name').value;
+  const country     = document.getElementById('country').value;
+  const retailer    = document.getElementById('retailer').value;
+  const weekDate    = document.getElementById('week_start_date').value;
+  const taskName    = document.getElementById('task_name').value.trim();
+  const priority    = document.getElementById('task_priority').value;
+  const description = document.getElementById('task_description').value.trim();
+  const approvalReq = document.getElementById('approval_required').value === 'true';
+  const photoReq    = document.getElementById('photo_required').value;
+  const commentReq  = document.getElementById('comment_required').value;
+  const stateValue  = getStateValue();
+
+  const [yyyy, mm, dd] = weekDate.split('-');
+  const portalDate  = `${mm}/${dd}/${yyyy}`;
+  const displayDate = `${dd}-${mm}-${yyyy ? yyyy.slice(2) : ''}`;
+
+  const photoMap = { required: 'Required', optional: 'Optional', not_required: 'Not Required' };
+  const docFiles = docSlots.filter(s => s.file).map(s => s.file.name);
+  const cleanDDs = dropdowns
+    .filter(d => d.question.trim())
+    .map(d => ({
+      question: d.question.trim(),
+      answers:  d.answers.filter(a => a.text.trim()).map(a => ({ text: a.text.trim(), flags: a.flag ? [a.flag] : [] })),
+    }));
+
+  return {
+    _meta: { schema_version: '2.0', generated_at: new Date().toISOString(), form_source: 'web_task_request' },
+    header: {
+      load_from_date_display: displayDate,
+      supplier:               supplier,
+      approval_required:      approvalReq,
+      photo_required:         photoReq,
+      comment_required:       commentReq,
+      attachment_count:       docFiles.length + (storeFileObj ? 1 : 0),
+      dropdown_count:         cleanDDs.length,
+      import_store:           { enabled: storeEnabled, filename: storeFileObj ? storeFileObj.name : null, resolved_attachment: storeFileObj ? storeFileObj.name : null },
+    },
+    attachments: {
+      store_listing:    { enabled: storeEnabled, filename: storeFileObj ? storeFileObj.name : null, type: 'store_listing' },
+      task_attachments: docFiles.map(f => ({ filename: f, type: 'task_document' })),
+    },
+    tasks: [{ task_name: taskName, task_name_overridden: false, task_priority: priority, frequency: 'oneOff', task_description: description, dropdowns: cleanDDs }],
+    portal_field_map: {
+      country, state: stateValue, retailer_name: retailer, supplier_name: supplier,
+      week_start_date_portal: portalDate,
+      task_approval:   approvalReq ? 'required' : 'not_required',
+      photo_name:      photoMap[photoReq] || 'Required',
+      comment:         photoMap[commentReq] || 'Required',
+      frequency:       'oneOff', task_name: taskName, task_priority: priority,
+      import_store_file:           storeFileObj ? storeFileObj.name : null,
+      document_files:              docFiles,
+      client_photos_shareable:     shareablePhotos,
+      client_comments_shareable:   shareableComments,
+      question_shareable:          shareableQuestions,
+    },
+    pipeline_flags: { requires_manual_review: false, task_name_was_overridden: false, multi_task_email: false, task_count: 1, unmatched_attachments: [] },
+  };
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+async function submitForm() {
+  clearErrors();
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Submitting...';
+
+  try {
+    const payload = buildPayload();
+    const fd = new FormData();
+
+    // Text fields
+    fd.append('supplier_name',        document.getElementById('supplier_name').value);
+    fd.append('country',              document.getElementById('country').value);
+    fd.append('retailer_name',        document.getElementById('retailer').value);
+    fd.append('state_json',           JSON.stringify(getStateValue()));
+    fd.append('week_start_date',      document.getElementById('week_start_date').value);
+    fd.append('task_name',            document.getElementById('task_name').value.trim());
+    fd.append('task_priority',        document.getElementById('task_priority').value);
+    fd.append('task_description',     document.getElementById('task_description').value.trim());
+    fd.append('approval_required',    document.getElementById('approval_required').value);
+    fd.append('photo_required',       document.getElementById('photo_required').value);
+    fd.append('comment_required',     document.getElementById('comment_required').value);
+    fd.append('import_store_enabled', String(storeEnabled));
+    fd.append('client_photos_shareable',   String(shareablePhotos));
+    fd.append('client_comments_shareable', String(shareableComments));
+    fd.append('question_shareable',        String(shareableQuestions));
+
+    // Dropdown questions as JSON
+    const cleanDDs = dropdowns
+      .filter(d => d.question.trim())
+      .map(d => ({ question: d.question.trim(), answers: d.answers.filter(a => a.text.trim()).map(a => ({ text: a.text.trim(), flags: a.flag ? [a.flag] : [] })) }));
+    fd.append('dropdowns_json', JSON.stringify(cleanDDs));
+
+    // Files
+    if (storeEnabled && storeFileObj) fd.append('store_file', storeFileObj);
+    docSlots.filter(s => s.file).forEach(s => fd.append('doc_files', s.file));
+
+    const res = await fetch('/submit', { method: 'POST', body: fd }).then(r => r.json());
+    if (res.error) throw new Error(res.error);
+
+    window.location.href = '/my-requests';
+  } catch (err) {
+    showError('error-banner', 'Submit failed: ' + err.message);
+    btn.disabled = false;
+    btn.innerHTML = 'Submit for Approval';
+  }
+}
+</script>
+</body>
+</html>

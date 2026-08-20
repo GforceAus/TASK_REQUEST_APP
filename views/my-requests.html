@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Requests — GForce Task Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav class="nav">
+  <a href="/submit" class="nav-logo">
+    <div class="nav-gf">GF</div>
+    <span class="nav-title">Task Portal</span>
+  </a>
+  <div class="nav-links">
+    <span id="supplier-links">
+      <a href="/submit" class="nav-link">New Request</a>
+      <a href="/my-requests" class="nav-link active">My Requests</a>
+    </span>
+    <span id="admin-links" style="display:none">
+      <a href="/admin/queue" class="nav-link">Approval Queue</a>
+      <a href="/admin/users" class="nav-link">Users</a>
+    </span>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user">{{DISPLAY_NAME}}</span>
+    <form method="POST" action="/logout" style="display:inline">
+      <button type="submit" class="btn-logout">Sign Out</button>
+    </form>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="page-title">My Requests</div>
+  <div class="page-sub">All task requests you have submitted.</div>
+
+  <div id="loading" class="empty-state">Loading...</div>
+  <div id="empty" class="empty-state" style="display:none">No requests submitted yet.</div>
+
+  <table class="data-table" id="table" style="display:none">
+    <thead>
+      <tr>
+        <th>Task Name</th>
+        <th>Supplier</th>
+        <th>Retailer</th>
+        <th>Submitted</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<!-- Detail modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Request Detail</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+const ROLE = '{{ROLE}}';
+if (ROLE === 'admin') {
+  document.getElementById('admin-links').style.display = 'contents';
+  document.getElementById('supplier-links').style.display = 'none';
+}
+
+async function load() {
+  const rows = await fetch('/api/my-requests').then(r => r.json());
+  document.getElementById('loading').style.display = 'none';
+  if (!rows.length) { document.getElementById('empty').style.display = 'block'; return; }
+  const tbody = document.getElementById('tbody');
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="task-name">${esc(r.task_name)}</td>
+      <td>${esc(r.supplier_name)}</td>
+      <td>${esc(r.retailer_name)}</td>
+      <td class="mono" style="font-size:11px">${new Date(r.created_at).toLocaleString('en-AU', {hour12:false})}</td>
+      <td><span class="badge badge-${r.status}">${r.status}</span></td>
+    `;
+    tr.addEventListener('click', () => openModal(r.id));
+    tbody.appendChild(tr);
+  });
+  document.getElementById('table').style.display = 'table';
+}
+
+async function openModal(id) {
+  const r = await fetch(`/api/my-requests/${id}`).then(x => x.json());
+  document.getElementById('modal-title').textContent = r.task_name;
+  let html = `
+    <div class="detail-meta">
+      <div class="detail-meta-item"><div class="detail-meta-label">Status</div><div><span class="badge badge-${r.status}">${r.status}</span></div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Supplier</div><div class="detail-meta-value">${esc(r.supplier_name)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Retailer</div><div class="detail-meta-value">${esc(r.retailer_name)}</div></div>
+    </div>
+  `;
+  if (r.status === 'rejected' && r.rejection_reason) {
+    html += `<div class="alert alert-error"><strong>Rejection reason:</strong><br>${esc(r.rejection_reason)}</div>`;
+  }
+  if (r.attachments && r.attachments.length) {
+    html += `<div class="review-section-title">Attachments</div>`;
+    r.attachments.forEach(a => { html += `<div class="mono text-dim" style="font-size:11px;margin-bottom:4px">📎 ${esc(a.name)}</div>`; });
+  }
+  html += renderPayload(r.payload);
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('modal').classList.add('show');
+}
+
+function renderPayload(p) {
+  if (!p) return '';
+  const h = p.header || {};
+  const t = (p.tasks && p.tasks[0]) || {};
+  const m = p.portal_field_map || {};
+  const stateDisplay = Array.isArray(m.state) ? m.state.join(', ') : 'All States';
+
+  let html = `
+    <div class="review-section-title">Task Details</div>
+    <div class="detail-meta">
+      <div class="detail-meta-item"><div class="detail-meta-label">Priority</div><div class="detail-meta-value">${esc(t.task_priority)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Load From Date</div><div class="detail-meta-value">${esc(h.load_from_date_display)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Country</div><div class="detail-meta-value">${esc(m.country)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">State(s)</div><div class="detail-meta-value">${esc(stateDisplay)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Approval Required</div><div class="detail-meta-value">${h.approval_required ? 'Yes' : 'No'}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Photo</div><div class="detail-meta-value">${esc(m.photo_name)}</div></div>
+      <div class="detail-meta-item"><div class="detail-meta-label">Comment</div><div class="detail-meta-value">${esc(m.comment)}</div></div>
+    </div>
+  `;
+
+  if (t.task_description) {
+    html += `<div class="review-section-title">Description</div><div class="detail-meta-value" style="white-space:pre-wrap">${esc(t.task_description)}</div>`;
+  }
+
+  if (t.dropdowns && t.dropdowns.length) {
+    html += `<div class="review-section-title">Questions</div>`;
+    t.dropdowns.forEach(d => {
+      html += `
+        <div style="margin-bottom:12px">
+          <div style="font-weight:500;margin-bottom:4px">${esc(d.question)}</div>
+          <div style="font-size:12px" class="text-dim">${(d.answers || []).map(a => esc(a.text)).join(', ') || '—'}</div>
+        </div>
+      `;
+    });
+  }
+
+  if (h.import_store && h.import_store.enabled) {
+    html += `<div class="review-section-title">Store Import</div><div class="mono text-dim" style="font-size:11px">📄 ${esc(h.import_store.filename)}</div>`;
+  }
+
+  html += `
+    <details style="margin-top:16px">
+      <summary style="cursor:pointer;font-size:12px" class="text-dim">View raw JSON</summary>
+      <pre class="review-json">${esc(JSON.stringify(p, null, 2))}</pre>
+    </details>
+  `;
+
+  return html;
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('show'); }
+document.getElementById('modal').addEventListener('click', e => { if (e.target === document.getElementById('modal')) closeModal(); });
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+load();
+</script>
+</body>
+</html>
